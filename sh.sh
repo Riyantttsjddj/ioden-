@@ -1,38 +1,37 @@
 #!/bin/bash
 
 # === Konfigurasi ===
-SUBDOMAIN="dns.riyan123.ip-ddns.com"  # Subdomain kamu
-PASSWORD="saputra456"                 # Password koneksi
-TUN_IP="10.0.0.1"                     # IP sisi server (jangan ubah)
-TTL="127"                             # TTL DNS agar terlihat natural
-PORT="53"                             # Port DNS standar
+SUBDOMAIN="dns.riyan123.ip-ddns.com"   # Ganti sesuai subdomain kamu
+PASSWORD="saputra456"                  # Ganti sesuai kebutuhan
+TUN_IP="10.0.0.1"                      # IP tunnel server
+PORT="53"
 
-echo "[✓] Setup Iodine DNS Tunnel - Anti-DPI Final"
+echo "[✓] Setup Iodine (Versi Lama - Kompatibel)"
 
-# === Update & install iodine ===
-apt update -y && apt install -y iodine || { echo "Install iodine gagal."; exit 1; }
+# === Install iodine dari repo (versi lama) ===
+apt update && apt install iodine -y || { echo "Gagal install iodine"; exit 1; }
 
 # === Aktifkan IP forwarding ===
 echo 1 > /proc/sys/net/ipv4/ip_forward
 sed -i '/^#\?net.ipv4.ip_forward/s/^#//' /etc/sysctl.conf
 sysctl -p
 
-# === Buka port UDP 53 jika UFW aktif ===
+# === Buka port UDP 53 (jika UFW aktif) ===
 if command -v ufw >/dev/null 2>&1; then
-    ufw allow $PORT/udp || echo "[!] UFW gagal, buka port manual jika perlu"
+    ufw allow $PORT/udp || echo "[!] Gagal buka port via ufw"
 fi
 
-# === Hentikan iodined sebelumnya ===
+# === Hentikan iodined lama jika ada ===
 pkill iodined 2>/dev/null
 
-# === Buat systemd service ===
+# === Buat systemd service baru ===
 cat <<EOF > /etc/systemd/system/iodine.service
 [Unit]
-Description=Iodine DNS Tunnel Server (Anti-DPI Final)
+Description=Iodine DNS Tunnel Server (Versi Lawas)
 After=network.target
 
 [Service]
-ExecStart=/usr/sbin/iodined -f -c -n -z -m 1000 -O 0 --ttl $TTL -P $PASSWORD $TUN_IP $SUBDOMAIN
+ExecStart=/usr/sbin/iodined -f -c -z -m 1000 -P $PASSWORD $TUN_IP $SUBDOMAIN
 Restart=always
 RestartSec=5
 User=root
@@ -41,13 +40,13 @@ User=root
 WantedBy=multi-user.target
 EOF
 
-# === Jalankan service ===
+# === Jalankan dan aktifkan service ===
 systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable iodine.service
 systemctl restart iodine.service
 
-# === Info koneksi untuk klien ===
-echo -e "\n[✓] Iodine aktif! Gunakan perintah di klien (Termux/PC):"
-echo "iodine -f -n -z -m 1000 -O 0 --ttl $TTL -P $PASSWORD $SUBDOMAIN"
-echo -e "\nServer IP Tunnel: $TUN_IP (Client akan dapat: 10.0.0.2)"
+# === Informasi koneksi untuk klien ===
+echo -e "\n[✓] Iodine Server aktif! Gunakan perintah ini di klien:"
+echo "iodine -f -z -m 1000 -P $PASSWORD $SUBDOMAIN"
+echo -e "\nServer IP Tunnel: $TUN_IP → Klien akan mendapat 10.0.0.2"
