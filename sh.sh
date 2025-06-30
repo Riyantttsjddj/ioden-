@@ -3,35 +3,42 @@
 # === Konfigurasi ===
 SUBDOMAIN="dns.riyan123.ip-ddns.com"   # Subdomain DNS Tunnel
 PASSWORD="saputra456"                  # Password koneksi
-TUN_IP="10.0.0.1/24"                   # IP Tunnel + CIDR
-PORT="53"                              # Port DNS standar (UDP)
+TUN_IP="10.0.0.1"                      # IP Tunnel server
+PORT="53"                              # Port DNS
 
-echo "[✓] Setup Iodine Server (Kompatibel Versi Lama)"
+echo "[✓] Memulai setup Iodine DNS Tunnel Server (Versi Stabil)"
 
-# === Install iodine dari repo bawaan ===
-apt update && apt install -y iodine || { echo "Gagal install iodine"; exit 1; }
+# === Install iodine dari repo resmi ===
+apt update && apt install -y iodine || {
+    echo "[✗] Gagal menginstall iodine"; exit 1;
+}
 
-# === Aktifkan IP forwarding untuk routing ==
+# === Aktifkan IP forwarding untuk internet sharing ===
 echo 1 > /proc/sys/net/ipv4/ip_forward
 sed -i '/^#\?net.ipv4.ip_forward/s/^#//' /etc/sysctl.conf
 sysctl -p
 
-# === Buka port UDP 53 jika UFW aktif ===
+# === Buka port 53 UDP jika UFW aktif ===
 if command -v ufw >/dev/null 2>&1; then
-    ufw allow $PORT/udp || echo "[!] UFW gagal, buka port manual jika perlu"
+    ufw allow $PORT/udp || echo "[!] UFW gagal buka port, cek manual jika perlu"
 fi
 
-# === Hentikan iodined lama (kalau ada) ===
+# === Hentikan iodined jika sedang berjalan ===
 pkill iodined 2>/dev/null
+
+# === Tambahkan NAT agar klien bisa internetan lewat DNS tunnel ===
+# Ganti 'eth0' dengan interface utama kamu jika berbeda
+INTF=$(ip route | grep default | awk '{print $5}')
+iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -o "$INTF" -j MASQUERADE
 
 # === Buat systemd service ===
 cat <<EOF > /etc/systemd/system/iodine.service
 [Unit]
-Description=Iodine DNS Tunnel Server (Kompatibel)
+Description=Iodine DNS Tunnel Server (Stabil)
 After=network.target
 
 [Service]
-ExecStart=/usr/sbin/iodined -f -c -z -m 1000 -P $PASSWORD $TUN_IP $SUBDOMAIN
+ExecStart=/usr/sbin/iodined -f -c -P $PASSWORD $TUN_IP $SUBDOMAIN
 Restart=always
 RestartSec=5
 User=root
@@ -40,14 +47,14 @@ User=root
 WantedBy=multi-user.target
 EOF
 
-# === Jalankan dan aktifkan service ===
+# === Aktifkan dan jalankan service ===
 systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable iodine.service
 systemctl restart iodine.service
 
-# === Info akhir ===
-echo -e "\n[✓] Iodine Server aktif!"
+# === Informasi koneksi ===
+echo -e "\n[✓] Iodine Server aktif dan siap digunakan!"
 echo "Gunakan perintah ini di klien (Termux/PC):"
-echo "iodine -f -z -m 1000 -P $PASSWORD $SUBDOMAIN"
-echo -e "\nTunnel Server IP: ${TUN_IP%/*} (Client akan dapat: 10.0.0.2)"
+echo -e "\niodine -f -P $PASSWORD $SUBDOMAIN\n"
+echo "Server Tunnel IP: $TUN_IP (Client akan mendapat: 10.0.0.2)"
