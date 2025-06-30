@@ -1,33 +1,33 @@
 #!/bin/bash
 
 # === Konfigurasi ===
-SUBDOMAIN="dns.riyan123.ip-ddns.com"   # Ganti sesuai subdomain kamu
-PASSWORD="saputra456"                  # Ganti sesuai kebutuhan
-TUN_IP="10.0.0.1"                      # IP tunnel server
-PORT="53"
+SUBDOMAIN="dns.riyan123.ip-ddns.com"   # Subdomain DNS Tunnel
+PASSWORD="saputra456"                  # Password koneksi
+TUN_IP="10.0.0.1/24"                   # IP Tunnel + CIDR
+PORT="53"                              # Port DNS standar (UDP)
 
-echo "[✓] Setup Iodine (Versi Lama - Kompatibel)"
+echo "[✓] Setup Iodine Server (Kompatibel Versi Lama)"
 
-# === Install iodine dari repo (versi lama) ===
-apt update && apt install iodine -y || { echo "Gagal install iodine"; exit 1; }
+# === Install iodine dari repo bawaan ===
+apt update && apt install -y iodine || { echo "Gagal install iodine"; exit 1; }
 
-# === Aktifkan IP forwarding ===
+# === Aktifkan IP forwarding untuk routing ==
 echo 1 > /proc/sys/net/ipv4/ip_forward
 sed -i '/^#\?net.ipv4.ip_forward/s/^#//' /etc/sysctl.conf
 sysctl -p
 
-# === Buka port UDP 53 (jika UFW aktif) ===
+# === Buka port UDP 53 jika UFW aktif ===
 if command -v ufw >/dev/null 2>&1; then
-    ufw allow $PORT/udp || echo "[!] Gagal buka port via ufw"
+    ufw allow $PORT/udp || echo "[!] UFW gagal, buka port manual jika perlu"
 fi
 
-# === Hentikan iodined lama jika ada ===
+# === Hentikan iodined lama (kalau ada) ===
 pkill iodined 2>/dev/null
 
-# === Buat systemd service baru ===
+# === Buat systemd service ===
 cat <<EOF > /etc/systemd/system/iodine.service
 [Unit]
-Description=Iodine DNS Tunnel Server (Versi Lawas)
+Description=Iodine DNS Tunnel Server (Kompatibel)
 After=network.target
 
 [Service]
@@ -46,7 +46,8 @@ systemctl daemon-reload
 systemctl enable iodine.service
 systemctl restart iodine.service
 
-# === Informasi koneksi untuk klien ===
-echo -e "\n[✓] Iodine Server aktif! Gunakan perintah ini di klien:"
+# === Info akhir ===
+echo -e "\n[✓] Iodine Server aktif!"
+echo "Gunakan perintah ini di klien (Termux/PC):"
 echo "iodine -f -z -m 1000 -P $PASSWORD $SUBDOMAIN"
-echo -e "\nServer IP Tunnel: $TUN_IP → Klien akan mendapat 10.0.0.2"
+echo -e "\nTunnel Server IP: ${TUN_IP%/*} (Client akan dapat: 10.0.0.2)"
