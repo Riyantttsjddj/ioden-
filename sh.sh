@@ -1,60 +1,69 @@
 #!/bin/bash
 
-# === Konfigurasi ===
-SUBDOMAIN="dns.riyan123.ip-ddns.com"   # Subdomain DNS Tunnel
-PASSWORD="saputra456"                  # Password koneksi
-TUN_IP="10.0.0.1"                      # IP Tunnel server
-PORT="53"                              # Port DNS
+# === KONFIGURASI ===
+DOMAIN="riyan123.ip-ddns.com"         # Domain utama YANG akan langsung dipakai client
+NS_DOMAIN="dns.riyan123.ip-ddns.com"  # Subdomain yang jadi NS, diarahkan ke IP VPS
+TUN_IP="10.0.0.1"                     # IP untuk tunnel DNS (dns0 interface)
+PASSWORD="bebasinternet"             # Password iodine
+TUN_NET="10.0.0.0/24"                # Jaringan virtual untuk client
 
-echo "[✓] Memulai setup Iodine DNS Tunnel Server (Versi Stabil)"
+# === DETEKSI INTERFACE INTERNET ===
+IFACE=$(ip route get 1.1.1.1 | awk '{print $5; exit}')
+echo "[+] Interface internet terdeteksi: $IFACE"
 
-# === Install iodine dari repo resmi ===
-apt update && apt install -y iodine || {
-    echo "[✗] Gagal menginstall iodine"; exit 1;
-}
+# === INSTALL DEPENDENSI ===
+echo "[+] Install iodine dan iptables"
+apt update
+apt install -y iodine iptables-persistent resolvconf ufw
 
-# === Aktifkan IP forwarding untuk internet sharing ===
-echo 1 > /proc/sys/net/ipv4/ip_forward
-sed -i '/^#\?net.ipv4.ip_forward/s/^#//' /etc/sysctl.conf
-sysctl -p
+# === BUKA PORT UDP 53 ===
+echo "[+] Buka port UDP 53 (DNS)"
+ufw allow 53/udp
+ufw reload
 
-# === Buka port 53 UDP jika UFW aktif ===
-if command -v ufw >/dev/null 2>&1; then
-    ufw allow $PORT/udp || echo "[!] UFW gagal buka port, cek manual jika perlu"
-fi
+# === AKTIFKAN IP FORWARDING ===
+echo "[+] Aktifkan IP Forwarding"
+sysctl -w net.ipv4.ip_forward=1
+sed -i 's|#net.ipv4.ip_forward=1|net.ipv4.ip_forward=1|' /etc/sysctl.conf
 
-# === Hentikan iodined jika sedang berjalan ===
-pkill iodined 2>/dev/null
+# === ATUR IPTABLES (NAT & ROUTING) ===
+echo "[+] Konfigurasi NAT dan routing dns0"
+iptables -t nat -A POSTROUTING -s $TUN_NET -o $IFACE -j MASQUERADE
+iptables -A FORWARD -i dns0 -o $IFACE -j ACCEPT
+iptables -A FORWARD -i $IFACE -o dns0 -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -t nat -A PREROUTING -i dns0 -p udp --dport 53 -j DNAT --to-destination 8.8.8.8
+iptables-save > /etc/iptables/rules.v4
 
-# === Tambahkan NAT agar klien bisa internetan lewat DNS tunnel ===
-# Ganti 'eth0' dengan interface utama kamu jika berbeda
-INTF=$(ip route | grep default | awk '{print $5}')
-iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -o "$INTF" -j MASQUERADE
-
-# === Buat systemd service ===
-cat <<EOF > /etc/systemd/system/iodine.service
+# === BUAT SERVICE SYSTEMD UNTUK IODINED ===
+echo "[+] Buat systemd service iodined"
+cat > /etc/systemd/system/iodined.service <<EOF
 [Unit]
-Description=Iodine DNS Tunnel Server (Stabil)
+Description=Iodine DNS Tunnel Server
 After=network.target
 
 [Service]
-ExecStart=/usr/sbin/iodined -f -c -P $PASSWORD $TUN_IP $SUBDOMAIN
+ExecStart=/usr/sbin/iodined -f -P $PASSWORD $TUN_IP $DOMAIN
+ExecStartPost=/usr/sbin/iptables-restore < /etc/iptables/rules.v4
 Restart=always
-RestartSec=5
-User=root
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# === Aktifkan dan jalankan service ===
-systemctl daemon-reexec
+# === AKTIFKAN DAN JALANKAN SERVICE ===
+echo "[+] Aktifkan service iodined"
 systemctl daemon-reload
-systemctl enable iodine.service
-systemctl restart iodine.service
+systemctl enable iodined
+systemctl restart iodined
 
-# === Informasi koneksi ===
-echo -e "\n[✓] Iodine Server aktif dan siap digunakan!"
-echo "Gunakan perintah ini di klien (Termux/PC):"
-echo -e "\niodine -f -P $PASSWORD $SUBDOMAIN\n"
-echo "Server Tunnel IP: $TUN_IP (Client akan mendapat: 10.0.0.2)"
+# === INFO FINAL ===
+echo ""
+echo "✅ SETUP BERHASIL!"
+echo "🌐 Domain Utama : $DOMAIN"
+echo "🧠 NS Record    : $DOMAIN NS → $NS_DOMAIN"
+echo "📌 A Record     : $NS_DOMAIN → IP VPS kamu"
+echo "🔐 Password     : $PASSWORD"
+echo ""
+echo "💡 Tes client:"
+echo "    iodine -P $PASSWORD $DOMAIN"
+echo "    ip route add default dev dns0"
