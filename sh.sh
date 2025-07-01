@@ -4,7 +4,7 @@
 DOMAIN="riyan123.ip-ddns.com"
 NS_DOMAIN="riyan200324.duckdns.org"
 TUN_IP="10.0.0.1"
-PASSWORD="bebasinternet"
+PASSWORD="saputra456"
 TUN_NET="10.0.0.0/24"
 
 # === DETEKSI INTERFACE INTERNET ===
